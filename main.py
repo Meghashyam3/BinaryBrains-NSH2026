@@ -54,6 +54,15 @@ class TelemetryPayload(BaseModel):
 class StepPayload(BaseModel):
     step_seconds: int
 
+class Maneuver(BaseModel):
+    burn_id: str
+    burnTime: str
+    deltaV_vector: Vector3
+
+class SchedulePayload(BaseModel):
+    satelliteId: str
+    maneuver_sequence: List[Maneuver]
+
 class SystemState:
     def __init__(self):
         self.satellites = {}
@@ -236,6 +245,19 @@ async def ingest_telemetry(payload: TelemetryPayload): return {"status": "ACK"}
 
 @app.post("/api/simulate/step")
 async def api_simulate_step(payload: StepPayload): return advance_simulation(payload.step_seconds)
+
+@app.post("/api/maneuver/schedule")
+async def schedule_maneuver(payload: SchedulePayload):
+    sat = sim_state.satellites.get(payload.satelliteId)
+    if not sat: return {"status": "ERROR", "message": "Satellite Not Found"}
+    return {
+        "status": "SCHEDULED",
+        "validation": {
+            "ground_station_los": check_los(sat["state"]),
+            "sufficient_fuel": sat["fuel_kg"] > GRAVEYARD_LIMIT,
+            "projected_mass_remaining_kg": sat["fuel_kg"] - calculate_fuel_burn(sat["fuel_kg"], MAX_THRUST_KM_S)
+        }
+    }
 
 @app.get("/api/visualization/snapshot")
 async def get_snapshot():
