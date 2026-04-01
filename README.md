@@ -2,6 +2,7 @@
 **National Space Hackathon 2026 Submission** | **Team:** Binary Brains
 
 ## 📌 Quick Links
+* **💻 [View Live GitHub Repository](https://github.com/Meghashyam3/BinaryBrains-NSH2026)**
 * **🎥 [Watch the 5-Minute Video Demonstration]([INSERT YOUR YOUTUBE LINK HERE])**
 * **📄 [Read the Full Technical Architecture Report](./Binary-Brains_NSH2026_Report.pdf)**
 
