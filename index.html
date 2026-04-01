@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AETHER | Mission Control</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <style>
+        body { margin: 0; background: #0b0c10; color: #66fcf1; font-family: 'Courier New', monospace; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { padding: 10px 20px; border-bottom: 2px solid #45a29e; display: flex; justify-content: space-between; background: #1f2833; align-items: center; }
+        .stat-box { background: #1f2833; padding: 10px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+        canvas { background: #000; border: 1px solid #45a29e; border-radius: 4px; box-shadow: 0 0 15px rgba(102, 252, 241, 0.1); }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0b0c10; }
+        ::-webkit-scrollbar-thumb { background: #45a29e; border-radius: 4px; }
+
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 5px rgba(102, 252, 241, 0.2); }
+            50% { box-shadow: 0 0 15px rgba(102, 252, 241, 0.8); border-color: #ffffff; color: #ffffff; }
+            100% { box-shadow: 0 0 5px rgba(102, 252, 241, 0.2); }
+        }
+        .blink-btn { animation: pulse-glow 2s infinite; }
+
+        /* 3D Satellite Labels */
+        .satellite-label {
+            color: #66fcf1; font-size: 10px; font-weight: bold; letter-spacing: 1px;
+            text-shadow: 0 0 8px #66fcf1, 0 0 2px #000; pointer-events: none;
+            white-space: nowrap; padding: 2px 5px; background: rgba(0,0,0,0.45);
+            border-left: 1px solid #66fcf166; margin-top: -15px; 
+        }
+
+        /* 3D Danger Sign */
+        .danger-sign {
+            font-size: 18px; pointer-events: none;
+            animation: danger-blink 0.55s ease-in-out infinite;
+            filter: drop-shadow(0 0 6px #ff2222); color: #ff2222;
+            margin-top: -30px;
+        }
+        @keyframes danger-blink {
+            0%,100% { opacity: 1; transform: scale(1.1); }
+            50%      { opacity: 0.05; transform: scale(0.85); }
+        }
+
+        /* 3D Danger Sidebar */
+        #danger-sidebar {
+            position: absolute; top: 20px; right: 20px; z-index: 10;
+            background: rgba(6, 4, 4, 0.93); border: 1px solid rgba(255,60,60,0.35);
+            border-top: 2px solid #ff3333; padding: 14px 16px; border-radius: 4px;
+            min-width: 210px; display: none; box-shadow: 0 0 40px rgba(255,40,40,0.12);
+        }
+        #danger-header {
+            font-size: 10px; color: #ff4444; letter-spacing: 2.5px; text-transform: uppercase;
+            margin-bottom: 12px; display: flex; align-items: center; gap: 8px; font-weight: bold;
+        }
+        .blink-dot {
+            width: 7px; height: 7px; background: #ff3333; border-radius: 50%;
+            animation: danger-blink 0.55s ease-in-out infinite; flex-shrink: 0;
+        }
+        #danger-sub { font-size: 9px; color: #7a3030; letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase; }
+        .danger-sat-btn {
+            display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 6px;
+            background: rgba(255,40,40,0.05); color: #ff8080; border: 1px solid rgba(255,60,60,0.25);
+            padding: 8px 10px; cursor: pointer; font-family: inherit; font-size: 10px;
+            letter-spacing: 1px; text-transform: uppercase; border-radius: 2px; transition: all 0.2s;
+        }
+        .danger-sat-btn:hover { background: rgba(255,40,40,0.15); border-color: rgba(255,60,60,0.6); color: #ffaaaa; }
+        .dbtn-icon { font-size: 13px; animation: danger-blink 0.55s ease-in-out infinite; }
+        .dbtn-text { flex: 1; text-align: left; }
+        .dbtn-zoom { font-size: 9px; color: #7a3030; }
+
+        /* 3D Vertical Legend */
+        #legend-3d {
+            position: absolute; bottom: 20px; left: 20px; z-index: 10;
+            background: rgba(6,10,18,0.88); border: 1px solid #1e4d5c;
+            padding: 15px; border-radius: 4px; font-size: 11px; color: #4d8a94;
+            letter-spacing: 0.5px; line-height: 2.2;
+        }
+        .legend-row { display: flex; align-items: center; gap: 10px; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2 style="margin: 0; letter-spacing: 2px; font-weight: normal;">BINARYSPACE: AUTONOMOUS CONSTELLATION MANAGER</h2>
+        <div id="clock" style="font-size: 16px;">--:--:--</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; padding: 15px; height: calc(100vh - 65px); gap: 15px; box-sizing: border-box;">
+        
+        <div style="display: flex; gap: 15px; height: 45px;">
+            <div class="stat-box" style="border: none; border-left: 4px solid #66fcf1; width: 140px; justify-content: flex-start; padding-left: 15px; color: #66fcf1;">ACTIVE: <span id="c-active" style="margin-left: 10px; color: #fff;">--</span></div>
+            <div class="stat-box" style="border: none; border-left: 4px solid #555; width: 150px; justify-content: flex-start; padding-left: 15px; color: #888;">GRAVEYARD: <span id="c-grave" style="margin-left: 10px; color: #fff;">--</span></div>
+            <div class="stat-box" style="border: none; border-left: 4px solid #ff4c4c; width: 140px; justify-content: flex-start; padding-left: 15px; color: #ff4c4c;">HAZARDS: <span id="c-conj" style="margin-left: 10px; color: #fff;">--</span></div>
+            <div class="stat-box" style="border: none; border-left: 4px solid #f2a900; width: 220px; justify-content: flex-start; padding-left: 15px; color: #f2a900;">ENGINE LATENCY: <span id="kd-latency" style="margin: 0 8px; color: #fff;">--</span> <span style="color: #fff;">ms</span></div>
+            
+            <div style="display: flex; gap: 10px; margin-left: auto;">
+                <button onclick="switchView('map')" id="btn-map" style="background: #66fcf1; color: #000; font-weight: bold; border: 1px solid #45a29e; padding: 0 20px; cursor: pointer;">LIVE MAP</button>
+                <button onclick="switchView('logs')" id="btn-logs" style="background: transparent; border: 1px solid #45a29e; color: #66fcf1; padding: 0 20px; cursor: pointer;">MISSION LOGS</button>
+                <button onclick="switchView('3d')" id="btn-3d" class="blink-btn" style="background: transparent; border: 1px solid #45a29e; color: #66fcf1; padding: 0 20px; cursor: pointer; transition: 0.3s;">3D ORBIT</button>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 15px; flex-grow: 1; overflow: hidden;">
+            
+            <div id="left-sidebar" style="width: 260px; display: flex; flex-direction: column;">
+                <div style="color: #45a29e; font-weight: bold; letter-spacing: 2px; margin-bottom: 10px;">FLEET OVERVIEW</div>
+                <div id="fleet-list" style="flex-grow: 1; overflow-y: auto; padding-right: 5px;"></div>
+            </div>
+
+            <div style="flex: 1; min-width: 0; border: 1px solid #45a29e; background: #050505; border-radius: 4px; padding: 15px; display: flex; flex-direction: column; box-sizing: border-box; position: relative;">
+                
+                <div id="map-page" style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center;">
+                    <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 10px;">
+                        <span style="letter-spacing: 2px; font-weight: bold; color: #66fcf1; font-size: 14px; margin-bottom: 10px;">GLOBAL TRACK</span>
+                        <div style="display: flex; gap: 25px; font-size: 11px; align-items: center;">
+                            <div style="color: #66fcf1; display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 50%; background: #66fcf1;"></div> ACTIVE</div>
+                            <div style="color: #f2a900; display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 50%; background: #f2a900; border: 2px solid #ff4c4c; box-sizing: border-box;"></div> EVADING</div>
+                            <div style="color: #ff4c4c; display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 50%; background: #ff4c4c;"></div> DEBRIS</div>
+                            <div style="color: #888; display: flex; align-items: center; gap: 6px;"><div style="width: 12px; height: 12px; border-radius: 50%; background: #555555;"></div> GRAVEYARD</div>
+                        </div>
+                    </div>
+                    <div style="flex: 1; width: 100%; display: flex; justify-content: center; align-items: stretch; min-height: 0; padding-bottom: 5px; box-sizing: border-box;">
+                        <canvas id="mapCanvas" width="800" height="420" style="width: 100%; height: 100%; object-fit: fill; border-radius: 4px; display: block;"></canvas>
+                    </div>
+                </div>
+
+                <div id="log-page" style="display: none; width: 100%; height: 100%; flex-direction: column;">
+                    <div style="padding-bottom: 10px; border-bottom: 1px solid #45a29e; display: flex; justify-content: space-between;">
+                        <span style="font-weight: bold; letter-spacing: 2px;">GLOBAL MISSION EVENT LOG</span>
+                        <button onclick="downloadLogs()" style="background: #66fcf1; color:#000; border:none; cursor:pointer; font-weight:bold; font-size: 10px; padding: 2px 8px;">DOWNLOAD TXT</button>
+                    </div>
+                    <div id="log-content" style="flex-grow: 1; overflow-y: auto; margin-top: 10px; font-size: 14px; line-height: 1.8;"></div>
+                </div>
+
+                <div id="3d-view-container" style="display: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #020408;">
+                    
+                    <div id="danger-sidebar">
+                        <div id="danger-header"><div class="blink-dot"></div> COLLISION RISK</div>
+                        <div id="danger-sub">Select to inspect telemetry</div>
+                        <div id="danger-list"></div>
+                    </div>
+
+                    <div id="legend-3d">
+                        <div class="legend-row"><div class="legend-dot" style="background:#66fcf1;"></div>Active Satellite</div>
+                        <div class="legend-row"><div class="legend-dot" style="background:#f2a900; border: 2px solid #ff4c4c; width: 8px; height: 8px;"></div>Evading Maneuver</div>
+                        <div class="legend-row"><div class="legend-dot" style="background:#555555;"></div>Graveyard Orbit</div>
+                        <div class="legend-row"><div class="legend-dot" style="background:#ff4444;box-shadow:0 0 4px #ff4444;"></div>Debris Cloud</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div id="target-command-center" style="width: 280px; border: 1px solid #45a29e; background: #12181f; border-radius: 4px; padding: 15px; display: none; flex-direction: column; flex-shrink: 0; z-index: 20;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #45a29e; padding-bottom: 10px; margin-bottom: 15px;">
+                    <span id="panel-title" style="font-weight: bold; letter-spacing: 1px; color: #66fcf1;">SAT TELEMETRY</span>
+                    <span onclick="closeTelemetry()" style="color: #ff4c4c; cursor: pointer; font-weight: bold; font-size: 16px;">✖</span>
+                </div>
+                
+                <div style="font-size: 12px; line-height: 1.8; flex-grow: 1; overflow-y: auto;">
+                    <div id="t-id" style="font-weight: bold; font-size: 14px; margin-bottom: 5px;"></div>
+                    <div id="t-status"></div>
+                    <div id="t-fuel" style="color: #f2a900;"></div>
+                    <div id="t-alt"></div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background: rgba(255,76,76,0.1); border-left: 3px solid #ff4c4c;">
+                        <div style="color: #ff4c4c; font-size: 11px; letter-spacing: 1px; margin-bottom: 5px;">MISSION IMPACT</div>
+                        <div id="t-life-lost" style="color: #aaa;"></div>
+                    </div>
+
+                    <div style="margin-top: 15px; color: #888;">Coordinates (km):</div>
+                    <div id="t-x" style="margin-left: 10px;"></div>
+                    <div id="t-y" style="margin-left: 10px;"></div>
+                    <div id="t-z" style="margin-left: 10px;"></div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; align-items: center; margin-top: 10px;">
+                    <div style="font-size: 10px; margin-bottom: 10px; letter-spacing: 1px; color: #45a29e;">LOCAL PROXIMITY RADAR</div>
+                    <div style="border: 1px solid #1f2833; border-radius: 50%; padding: 0;">
+                        <canvas id="radarCanvas" width="180" height="180" style="border-radius: 50%; background: #050505;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const mCtx = document.getElementById('mapCanvas').getContext('2d');
+        let rCtx = null; 
+        let sats = []; let debs = [];
+        let selectedSat = null;
+        let missionEvents = [];
+        let hoveredSat = null;
+        let currentFrameData = null; 
+
+        let scene, camera, renderer, labelRenderer, controls;
+        let earthGroup, debrisCloud;
+        let satelliteMeshes = {}; 
+        let threeJsInitialized = false;
+        const SCALE_FACTOR = 1 / 1000;
+        const EARTH_R = 6.378; 
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        const SAT_COST_USD = 50000000; 
+        const SAT_LIFESPAN_DAYS = 1825; 
+        const MAX_FUEL_KG = 50.0;
+        const COST_PER_KG = SAT_COST_USD / MAX_FUEL_KG;
+        const DAYS_PER_KG = SAT_LIFESPAN_DAYS / MAX_FUEL_KG;
+
+        function logEvent(msg) {
+            const time = new Date().toLocaleTimeString();
+            missionEvents.unshift(`[${time}] ${msg}`); 
+            document.getElementById('log-content').innerHTML = missionEvents.slice(0, 50).map(s => `<div>${s}</div>`).join('');
+            if (missionEvents.length > 50) missionEvents.pop(); 
+        }
+
+        function downloadLogs() {
+            const blob = new Blob([missionEvents.slice().reverse().join('\n')], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `AETHER_Mission_Report_${Date.now()}.txt`;
+            document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a);
+        }
+
+        function triggerResize() { setTimeout(() => window.dispatchEvent(new Event('resize')), 10); }
+
+        function closeTelemetry() {
+            document.getElementById('target-command-center').style.display = 'none';
+            selectedSat = null; 
+            if (threeJsInitialized) {
+                controls.target.set(0, 0, 0);
+                camera.position.set(22, 14, 22);
+            }
+            triggerResize();
+        }
+
+        function selectSat(id) {
+            selectedSat = id;
+            document.getElementById('target-command-center').style.display = 'flex';
+            rCtx = document.getElementById('radarCanvas').getContext('2d'); 
+            
+            if (threeJsInitialized && satelliteMeshes[id]) {
+                const targetPos = satelliteMeshes[id].position.clone();
+                controls.target.copy(targetPos);
+                
+                const dir = targetPos.clone().normalize();
+                const zoomPos = targetPos.clone().add(dir.multiplyScalar(1.5));
+                camera.position.copy(zoomPos);
+            }
+            triggerResize();
+        }
+
+        function switchView(view) {
+            const views = {
+                'map': { page: 'map-page', btn: 'btn-map', showLeft: true },
+                'logs': { page: 'log-page', btn: 'btn-logs', showLeft: false },
+                '3d': { page: '3d-view-container', btn: 'btn-3d', showLeft: true }
+            };
+
+            for (const key in views) {
+                document.getElementById(views[key].page).style.display = 'none';
+                const btn = document.getElementById(views[key].btn);
+                if (btn) { btn.style.background = 'transparent'; btn.style.color = '#66fcf1'; btn.style.border = '1px solid #45a29e'; }
+            }
+
+            if (views[view]) {
+                document.getElementById(views[view].page).style.display = views[view].page === '3d-view-container' ? 'block' : 'flex';
+                const activeBtn = document.getElementById(views[view].btn);
+                if (activeBtn) { activeBtn.style.background = '#66fcf1'; activeBtn.style.color = '#000'; activeBtn.style.border = '1px solid #66fcf1'; }
+                
+                document.getElementById('left-sidebar').style.display = views[view].showLeft ? 'flex' : 'none';
+                
+                if (view === 'logs') {
+                    document.getElementById('target-command-center').style.display = 'none';
+                } else if (selectedSat) {
+                    document.getElementById('target-command-center').style.display = 'flex';
+                }
+            }
+            
+            if (view === '3d' && !threeJsInitialized) init3D();
+            if (view === '3d' && threeJsInitialized) triggerResize();
+        }
+
+        async function update() {
+            try {
+                const res = await fetch('/api/visualization/snapshot');
+                const d = await res.json();
+                sats = d.satellites; debs = d.debris_cloud; currentFrameData = d;
+                document.getElementById('clock').innerText = new Date(d.timestamp).toLocaleTimeString();
+
+                let listHtml = '';
+                let dangerListHtml = '';
+                let dangerCount = 0;
+
+                if (Math.random() < 0.1 && sats.length > 0) {
+                    logEvent(`[ROUTINE] ${sats[Math.floor(Math.random() * sats.length)].id} - Orbit stable. J2 perturbations compensated.`);
+                }
+
+                sats.forEach(s => {
+                    if (s.status === 'EVADING') {
+                        dangerCount++;
+                        dangerListHtml += `
+                            <button class="danger-sat-btn" onclick="selectSat('${s.id}')">
+                                <span class="dbtn-icon">⚠</span>
+                                <span class="dbtn-text">${s.id}</span>
+                                <span class="dbtn-zoom">INSPECT ▶</span>
+                            </button>`;
+                    }
+
+                    if (s.status === "EVADING" && !window['is_evading_'+s.id]) {
+                        window['is_evading_'+s.id] = true; 
+                        logEvent(`<span style="color:#ff4c4c; font-weight:bold;">[WARNING] ${s.id} HAZARD DETECTED! Evasion burn executed. Fuel: ${(s.fuel_kg + 0.5).toFixed(2)} kg &rarr; ${s.fuel_kg.toFixed(2)} kg</span>`);
+                    }
+                    if (s.status === "NOMINAL" && window['is_evading_'+s.id]) {
+                        window['is_evading_'+s.id] = false; 
+                        logEvent(`<span style="color:#77dd77; font-weight:bold;">[RECOVERY] ${s.id} Threat passed. Recovery burn executed. Fuel: ${(s.fuel_kg + 0.5).toFixed(2)} kg &rarr; ${s.fuel_kg.toFixed(2)} kg</span>`);
+                    }
+                    if (s.status === "GRAVEYARD" && !window['retired_'+s.id]) {
+                         logEvent(`<span style="color:#888;">[EOL PROTOCOL] ${s.id} fuel critical. Graveyard orbit achieved.</span>`);
+                         window['retired_'+s.id] = true;
+                    }
+
+                    if (selectedSat === s.id) {
+                        document.getElementById('panel-title').innerText = `${s.id} TELEMETRY`;
+                        document.getElementById('t-id').innerText = `ID: ${s.id}`;
+                        document.getElementById('t-status').innerText = `Condition: ${s.status}`;
+                        document.getElementById('t-fuel').innerText = `Remaining Fuel: ${s.fuel_kg.toFixed(3)} kg`;
+                        document.getElementById('t-alt').innerText = `Altitude: ${(Math.sqrt(s.state[0]**2 + s.state[1]**2 + s.state[2]**2) - 6378).toFixed(2)} km`;
+                        document.getElementById('t-x').innerText = `X: ${s.state[0].toFixed(3)}`;
+                        document.getElementById('t-y').innerText = `Y: ${s.state[1].toFixed(3)}`;
+                        document.getElementById('t-z').innerText = `Z: ${s.state[2].toFixed(3)}`;
+                        let fuelBurned = Math.max(0, MAX_FUEL_KG - s.fuel_kg);
+                        document.getElementById('t-life-lost').innerText = `Lifespan Lost: ${(fuelBurned * DAYS_PER_KG).toFixed(1)} Days`;
+                    }
+
+                    let statusColor = s.status === 'EVADING' ? '#ff4c4c' : (s.status === 'GRAVEYARD' ? '#888' : '#f9d71c');
+                    if (s.status === 'NOMINAL') statusColor = '#66fcf1';
+                    
+                    listHtml += `
+                    <div onclick="selectSat('${s.id}')" style="border-left: 3px solid ${statusColor}; padding: 10px; margin-bottom: 5px; cursor: pointer; background: ${selectedSat === s.id ? 'rgba(102, 252, 241, 0.1)' : 'transparent'}; transition: 0.2s;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #fff; font-weight: bold; font-size: 13px;">${s.id}</span>
+                            <span style="color: ${statusColor}; font-size: 9px; border: 1px solid; padding: 2px 4px;">${s.status}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; margin-top: 8px; color: #aaa;">
+                            <span>Fuel: ${s.fuel_kg.toFixed(2)} kg</span>
+                            <span style="color: #000; background: #66fcf1; padding: 3px 6px; font-weight: bold; border-radius: 2px;">&#128269; DETAILS</span>
+                        </div>
+                    </div>`;
+                });
+
+                document.getElementById('fleet-list').innerHTML = listHtml;
+                
+                const dangerSidebar = document.getElementById('danger-sidebar');
+                if (dangerCount > 0) {
+                    dangerSidebar.style.display = 'block';
+                    document.getElementById('danger-list').innerHTML = dangerListHtml;
+                } else {
+                    dangerSidebar.style.display = 'none';
+                }
+
+                document.getElementById('c-active').innerText = sats.filter(s => s.status !== "GRAVEYARD").length;
+                document.getElementById('c-grave').innerText = sats.filter(s => s.status === "GRAVEYARD").length;
+                document.getElementById('c-conj').innerText = dangerCount;
+                if (d.metrics && d.metrics.kd_tree_latency_ms !== undefined) { document.getElementById('kd-latency').innerText = d.metrics.kd_tree_latency_ms.toFixed(2); }
+
+                if (threeJsInitialized) update3DScene(d);
+            } catch(e) { console.error("Update Error:", e); }
+        }
+
+        function draw() {
+            mCtx.fillStyle = 'rgba(5, 10, 15, 0.2)';
+            mCtx.fillRect(0, 0, mCtx.canvas.width, mCtx.canvas.height);
+
+            mCtx.fillStyle = "rgba(255, 76, 76, 0.3)";
+            debs.forEach(d => { 
+                const dl = Array.isArray(d) ? d[2] : d.lon;
+                const dla = Array.isArray(d) ? d[1] : d.lat;
+                mCtx.fillRect((dl+180)*(800/360), (90-dla)*(420/180), 1, 1); 
+            });
+
+            sats.forEach(s => {
+                const x = (s.lon+180)*(800/360); const y = (90-s.lat)*(420/180);
+                if (s.status === "GRAVEYARD") {
+                    mCtx.fillStyle = "#555555"; mCtx.beginPath(); mCtx.arc(x, y, 4, 0, 7); mCtx.fill();
+                } else if (s.status === "EVADING") {
+                    mCtx.fillStyle = "#f2a900"; mCtx.beginPath(); mCtx.arc(x, y, 6.5, 0, 7); mCtx.fill();
+                    mCtx.strokeStyle = "#ff4c4c"; mCtx.lineWidth = 2; mCtx.stroke();
+                } else {
+                    mCtx.fillStyle = "#66fcf1"; mCtx.beginPath(); mCtx.arc(x, y, 4, 0, 7); mCtx.fill();
+                }
+
+                if (hoveredSat === s.id) {
+                    mCtx.fillStyle = '#ffffff'; mCtx.font = 'bold 12px monospace'; mCtx.fillText(s.id, x + 10, y - 10); 
+                }
+            });
+
+            if (rCtx && selectedSat) {
+                rCtx.clearRect(0,0,180,180);
+                const centerSat = sats.find(s => s.id === selectedSat);
+                if (centerSat) {
+                    rCtx.strokeStyle="#1f2833"; [28,56,84].forEach(r => { rCtx.beginPath(); rCtx.arc(90,90,r,0,7); rCtx.stroke(); });
+                    const ref = centerSat; rCtx.fillStyle="#66fcf1"; rCtx.fillRect(88,88,4,4);
+                    debs.forEach(d => {
+                        const dl = Array.isArray(d) ? d[2] : d.lon;
+                        const dla = Array.isArray(d) ? d[1] : d.lat;
+                        const dx = (dl-ref.lon)*28; const dy = (dla-ref.lat)*28;
+                        if(Math.sqrt(dx*dx+dy*dy) < 84) {
+                            rCtx.fillStyle = Math.sqrt(dx*dx+dy*dy) < 28 ? "#ff4c4c" : "#77dd77";
+                            rCtx.fillRect(90+dx, 90+dy, 2.5, 2.5);
+                        }
+                    });
+                }
+            }
+            requestAnimationFrame(draw);
+        }
+
+        const canvas = document.getElementById('mapCanvas');
+        canvas.addEventListener('mousemove', (event) => {
+            if (!currentFrameData) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (event.clientX - rect.left) * scaleX;
+            const mouseY = (event.clientY - rect.top) * scaleY;
+            hoveredSat = null; canvas.style.cursor = 'default';
+            currentFrameData.satellites.forEach(s => {
+                let satX = (s.lon+180)*(800/360); let satY = (90-s.lat)*(420/180); 
+                if (Math.sqrt((mouseX - satX)**2 + (mouseY - satY)**2) < 8) { hoveredSat = s.id; canvas.style.cursor = 'pointer'; }
+            });
+        });
+        canvas.addEventListener('click', () => { if (hoveredSat) selectSat(hoveredSat); });
+
+        function buildStarfield() {
+            const N = 4500; const pos = new Float32Array(N * 3);
+            for (let i = 0; i < N; i++) {
+                const r = 700 + Math.random() * 300;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(Math.random() * 2 - 1);
+                pos[i*3] = r * Math.sin(phi) * Math.cos(theta); pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta); pos[i*3+2] = r * Math.cos(phi);
+            }
+            const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending })));
+
+            const pos2 = new Float32Array(300 * 3);
+            for (let i = 0; i < 300; i++) {
+                const r = 700 + Math.random() * 300;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(Math.random() * 2 - 1);
+                pos2[i*3] = r * Math.sin(phi) * Math.cos(theta); pos2[i*3+1] = r * Math.sin(phi) * Math.sin(theta); pos2[i*3+2] = r * Math.cos(phi);
+            }
+            const geo2 = new THREE.BufferGeometry(); geo2.setAttribute('position', new THREE.BufferAttribute(pos2, 3));
+            scene.add(new THREE.Points(geo2, new THREE.PointsMaterial({ color: 0xaaddff, size: 1.2, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending })));
+        }
+
+        function buildEarth() {
+            earthGroup = new THREE.Group();
+            earthGroup.add(new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 64, 64), new THREE.MeshBasicMaterial({ color: 0x05111e })));
+            earthGroup.add(new THREE.Mesh(new THREE.SphereGeometry(EARTH_R * 1.002, 32, 32), new THREE.MeshBasicMaterial({ color: 0x0d3a56, wireframe: true, transparent: true, opacity: 0.35 })));
+            earthGroup.add(new THREE.Mesh(new THREE.TorusGeometry(EARTH_R * 1.006, 0.007, 8, 200), new THREE.MeshBasicMaterial({ color: 0x66fcf1, transparent: true, opacity: 0.25 })));
+            scene.add(earthGroup);
+        }
+
+        function init3D() {
+            const container = document.getElementById('3d-view-container');
+            if (!container) return;
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 2000);
+            camera.position.set(22, 14, 22);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            labelRenderer = new THREE.CSS2DRenderer();
+            labelRenderer.setSize(container.clientWidth, container.clientHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            labelRenderer.domElement.style.pointerEvents = 'none';
+            container.appendChild(labelRenderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; controls.dampingFactor = 0.06;
+            controls.maxDistance = 80; controls.minDistance = EARTH_R + 0.8;
+
+            buildStarfield();
+            buildEarth();
+            
+            debrisCloud = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xff3333, size: 0.06, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending }));
+            scene.add(debrisCloud);
+
+            renderer.domElement.addEventListener('click', (event) => {
+                if (!threeJsInitialized) return;
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                const satArray = Object.values(satelliteMeshes);
+                const intersects = raycaster.intersectObjects(satArray, false);
+                
+                if (intersects.length > 0) {
+                    const clickedId = intersects[0].object.userData.id;
+                    if (clickedId) selectSat(clickedId);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (!threeJsInitialized) return;
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                labelRenderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            threeJsInitialized = true;
+            animate3D();
+        }
+
+        function update3DScene(data) {
+            if (!threeJsInitialized) return;
+
+            data.satellites.forEach(s => {
+                if (!satelliteMeshes[s.id] && s.state) {
+                    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0x66fcf1 }));
+                    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(0.40, 8, 8), new THREE.MeshBasicMaterial({ color: 0x66fcf1, transparent: true, opacity: 0.08, side: THREE.BackSide })));
+                    
+                    const div = document.createElement('div');
+                    div.className = 'satellite-label'; div.textContent = s.id;
+                    mesh.add(new THREE.CSS2DObject(div));
+                    
+                    mesh.userData = { id: s.id };
+                    scene.add(mesh);
+                    satelliteMeshes[s.id] = mesh;
+                }
+
+                const mesh = satelliteMeshes[s.id];
+                if (mesh && s.state) {
+                    mesh.position.set(s.state[0] * SCALE_FACTOR, s.state[2] * SCALE_FACTOR, -s.state[1] * SCALE_FACTOR);
+                    
+                    let c = 0x66fcf1; // Nominal (Cyan)
+                    if (s.status === 'EVADING') c = 0xf2a900; // Evading (Orange)
+                    else if (s.status === 'GRAVEYARD') c = 0x555555; // Graveyard (Grey)
+
+                    mesh.material.color.setHex(c);
+                    mesh.children[0].material.color.setHex(c);
+
+                    let dangerSign = mesh.children.find(child => child.element && child.element.className === 'danger-sign');
+                    if (s.status === 'EVADING' && !dangerSign) {
+                        const div = document.createElement('div');
+                        div.className = 'danger-sign'; div.textContent = '⚠';
+                        mesh.add(new THREE.CSS2DObject(div));
+                    } else if (s.status !== 'EVADING' && dangerSign) {
+                        mesh.remove(dangerSign);
+                    }
+                }
+            });
+
+            const debrisPositions = new Float32Array(data.debris_cloud.length * 3);
+            data.debris_cloud.forEach((d, i) => {
+                if (Array.isArray(d)) {
+                    const lat = d[1] * Math.PI / 180;
+                    const lon = d[2] * Math.PI / 180;
+                    const r = (6378.137 + d[3]) * SCALE_FACTOR;
+                    const x = r * Math.cos(lat) * Math.cos(lon);
+                    const y = r * Math.cos(lat) * Math.sin(lon);
+                    const z = r * Math.sin(lat);
+                    debrisPositions[i*3] = x;
+                    debrisPositions[i*3+1] = z; 
+                    debrisPositions[i*3+2] = -y;
+                } else if(d.state) {
+                    debrisPositions[i*3] = d.state[0] * SCALE_FACTOR;
+                    debrisPositions[i*3+1] = d.state[2] * SCALE_FACTOR; 
+                    debrisPositions[i*3+2] = -d.state[1] * SCALE_FACTOR;
+                }
+            });
+            debrisCloud.geometry.setAttribute('position', new THREE.BufferAttribute(debrisPositions, 3));
+        }
+
+        function animate3D() {
+            if (!threeJsInitialized) return;
+            requestAnimationFrame(animate3D);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+
+        setInterval(update, 1000);
+        draw();
+    </script>
+</body>
+</html>
