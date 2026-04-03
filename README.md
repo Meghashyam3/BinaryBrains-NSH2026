@@ -3,7 +3,7 @@
 
 ## 📌 Quick Links
 * **💻 [View Live GitHub Repository](https://github.com/Meghashyam3/BinaryBrains-NSH2026)**
-* **🎥 [Watch the 5-Minute Video Demonstration]([INSERT YOUR YOUTUBE LINK HERE])**
+* **🎥 [Watch the 5-Minute Video Demonstration](https://youtu.be/j4o7Yw_XJp8)**
 * **📄 [Read the Full Technical Architecture Report](./Binary-Brains_NSH2026_Report.pdf)**
 
 ---
